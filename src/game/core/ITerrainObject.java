@@ -1,5 +1,7 @@
 package game.core;
 
+import game.utils.Position;
+
 /**
  * ITerrainObject
  */

@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import game.core.ITerrainObject;
 import game.core.IcyTerrain;
 import game.entities.food.Food;
+import game.entities.hazard.HoleInIce;
 import game.enums.Direction;
 import game.enums.PenguinType;
 import game.utils.Position;
@@ -55,6 +56,7 @@ public class RoyalPenguin extends Penguin {
     /**
      * Activates the Royal Penguin's special ability.
      * Attempts to move one square in the given direction without sliding.
+     * Note: Food collection is handled by IcyTerrain after this method returns.
      * @param dir The direction to step
      * @param terrain The game terrain
      * @return true if the step was successful, false if it failed (blocked or fell)
@@ -76,9 +78,27 @@ public class RoyalPenguin extends Penguin {
         // Check if landing spot is occupied
         ArrayList<ITerrainObject> objectsAtDest = terrain.getObjectsAt(newPos);
 
-        // Can land if empty or only has food
+        // Check for HoleInIce - this is a "similar accident" to falling into water
+        for (ITerrainObject obj : objectsAtDest) {
+            if (obj instanceof HoleInIce) {
+                HoleInIce hole = (HoleInIce) obj;
+                if (!hole.isPlugged()) {
+                    // Accidentally steps into hole
+                    hasFallen = true;
+                    terrain.removeObjectAt(position, this);
+                    specialActionUsed = true;
+                    return false;
+                }
+                // Plugged hole - can step over safely, continue checking
+            }
+        }
+
+        // Can land if empty, only has food, or only has plugged holes
         boolean canLand = objectsAtDest.isEmpty() ||
-                objectsAtDest.stream().allMatch(obj -> obj instanceof Food);
+                objectsAtDest.stream().allMatch(obj ->
+                        obj instanceof Food ||
+                                (obj instanceof HoleInIce &&
+                                        ((HoleInIce) obj).isPlugged()));
 
         if (canLand) {
             // Remove from current position
@@ -90,19 +110,14 @@ public class RoyalPenguin extends Penguin {
             // Add to new position
             terrain.addObjectAt(position, this);
 
-            // Collect any food at this position
-            for (ITerrainObject obj : new ArrayList<>(objectsAtDest)) {
-                if (obj instanceof Food) {
-                    collectFood((Food) obj);
-                    terrain.removeObjectAt(newPos, obj);
-                }
-            }
+            // Food collection is handled by IcyTerrain.executeSpecialAction()
+            // so that the message can be printed properly
 
             specialActionUsed = true;
             return true;
         }
 
-        // Cannot land - square is occupied by non-food object
+        // Cannot land - square is occupied by non-food object (hazard or penguin)
         specialActionUsed = true;
         return false;
     }

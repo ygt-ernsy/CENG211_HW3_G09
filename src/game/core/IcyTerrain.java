@@ -29,7 +29,7 @@ import game.utils.RandomGenerator;
  * - The 10x10 game grid with all terrain objects
  * - Turn-based gameplay for 3 penguins over 4 turns
  * - Movement and collision processing
- * - Player input and AI decision making
+ * - Player input and AI decision-making
  * - Game display and scoreboard
  *
  * The grid uses a triple-nested ArrayList structure where each cell
@@ -453,28 +453,35 @@ public class IcyTerrain {
     private Direction chooseAIRoyalStepDirection(Penguin penguin) {
         Position pos = penguin.getPosition();
 
-        // Priority 1: Direction that is empty (no hazard, no water)
+        // Priority 1: Direction that is safe (empty, food only, or plugged hole)
         for (Direction dir : Direction.values()) {
             Position nextPos = pos.move(dir);
             if (isPositionValid(nextPos)) {
                 ArrayList<ITerrainObject> objects = getObjectsAt(nextPos);
                 boolean safe = objects.isEmpty() ||
-                        objects.stream().allMatch(obj -> obj instanceof Food);
+                        objects.stream().allMatch(obj ->
+                                obj instanceof Food ||
+                                        (obj instanceof HoleInIce && ((HoleInIce) obj).isPlugged()));
                 if (safe) {
                     return dir;
                 }
             }
         }
 
-        // Fallback: any valid direction (may fall into water)
+        // Fallback: any valid direction that doesn't have unplugged hole
         for (Direction dir : Direction.values()) {
             Position nextPos = pos.move(dir);
             if (isPositionValid(nextPos)) {
-                return dir;
+                ArrayList<ITerrainObject> objects = getObjectsAt(nextPos);
+                boolean hasUnpluggedHole = objects.stream()
+                        .anyMatch(obj -> obj instanceof HoleInIce && !((HoleInIce) obj).isPlugged());
+                if (!hasUnpluggedHole) {
+                    return dir;
+                }
             }
         }
 
-        // Last resort: random (will fall into water)
+        // Last resort: random (will fall into water or hole)
         return Direction.random();
     }
 
@@ -497,18 +504,52 @@ public class IcyTerrain {
             case ROYAL:
                 if (success) {
                     System.out.println(penguin.getName() + " moves one square to the " + direction.getDisplayName() + ".");
-                    // Check if food was collected
-                    ArrayList<ITerrainObject> objects = getObjectsAt(penguin.getPosition());
+                    // Collect any food at new position and print message
+                    ArrayList<ITerrainObject> objects = new ArrayList<>(getObjectsAt(penguin.getPosition()));
                     for (ITerrainObject obj : objects) {
                         if (obj instanceof Food) {
                             Food food = (Food) obj;
+                            penguin.collectFood(food);
+                            removeObjectAt(penguin.getPosition(), food);
+                            foodItems.remove(food);
                             System.out.println(penguin.getName() + " takes the " + food.getDisplayName() +
                                     " on the ground. (Weight=" + food.getWeight() + " units)");
                         }
                     }
                 } else if (penguin.hasFallen()) {
-                    System.out.println(penguin.getName() + " accidentally steps into the water!");
+                    // Determine if fell into water or hole
+                    Position targetPos = penguin.getPosition().move(direction);
+                    if (!isPositionValid(targetPos)) {
+                        System.out.println(penguin.getName() + " accidentally steps into the water!");
+                    } else {
+                        System.out.println(penguin.getName() + " accidentally steps into the HoleInIce!");
+                    }
                     System.out.println("*** " + penguin.getName() + " IS REMOVED FROM THE GAME!");
+                } else {
+                    // Step was blocked by a hazard or another penguin
+                    Position targetPos = penguin.getPosition().move(direction);
+                    ArrayList<ITerrainObject> blockingObjects = getObjectsAt(targetPos);
+                    String blockerName = "an obstacle";
+                    for (ITerrainObject obj : blockingObjects) {
+                        if (obj instanceof Penguin) {
+                            blockerName = ((Penguin) obj).getName();
+                            break;
+                        } else if (obj instanceof LightIceBlock) {
+                            blockerName = "LightIceBlock";
+                            break;
+                        } else if (obj instanceof HeavyIceBlock) {
+                            blockerName = "HeavyIceBlock";
+                            break;
+                        } else if (obj instanceof SeaLion) {
+                            blockerName = "SeaLion";
+                            break;
+                        } else if (obj instanceof Hazard) {
+                            blockerName = "a hazard";
+                            break;
+                        }
+                    }
+                    System.out.println(penguin.getName() + " cannot step there! Blocked by " + blockerName + ".");
+                    System.out.println(penguin.getName() + "'s special action is wasted.");
                 }
                 break;
             case ROCKHOPPER:
